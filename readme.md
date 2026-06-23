@@ -15,6 +15,8 @@ NTRIP (Networked Transport of RTCM via Internet Protocol) caster written in Go.
   config so each endpoint serves one RTCM flavor (e.g. RTCM 3.0, 3.2 MSM4/5/7).
 - **Username/password authentication** for both clients and servers
   (passwords stored in plaintext, per the chosen configuration model).
+  Individual mountpoints/handover endpoints can opt into anonymous client
+  access with `open: true` (server push auth is unaffected).
 - **Hot reload** via `systemctl reload` (SIGHUP): client users, mountpoint
   definitions, and base-station metadata/handover groups apply without
   dropping live connections. Changing the listen address requires a restart.

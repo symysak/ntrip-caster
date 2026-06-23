@@ -24,7 +24,7 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn, br *bufio.Read
 	cfg := s.mgr.Config()
 
 	// Root request or unknown stream: return the sourcetable.
-	_, isMP := cfg.LookupMountpoint(name)
+	mpCfg, isMP := cfg.LookupMountpoint(name)
 	group, isHandover := cfg.LookupHandover(name)
 	if name == "" || (!isMP && !isHandover) {
 		reason := "unknown-mountpoint"
@@ -39,8 +39,10 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn, br *bufio.Read
 		return
 	}
 
-	// Authenticate the rover against the requested stream.
-	if !authClient(cfg, req, name) {
+	// Authenticate the rover against the requested stream, unless the stream is
+	// configured as open (anonymous read access).
+	open := (isHandover && group.Open) || (isMP && mpCfg.Open)
+	if !open && !authClient(cfg, req, name) {
 		writeUnauthorized(bw, v, s.version, "NTRIP "+name)
 		return
 	}

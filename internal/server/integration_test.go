@@ -25,6 +25,7 @@ func testConfig() *config.Config {
 		Mountpoints: []config.Mountpoint{
 			{Name: "TOKYO", Password: "tpush", Lat: 35.6586, Lon: 139.7454, Authentication: "B", Fee: "N"},
 			{Name: "OSAKA", Password: "opush", Lat: 34.6937, Lon: 135.5023, Authentication: "B", Fee: "N"},
+			{Name: "OPEN", Password: "openpush", Lat: 35.0, Lon: 135.0, Open: true, Fee: "N"},
 		},
 		Handover: []config.HandoverGroup{
 			{Name: "AUTO", Members: []string{"TOKYO", "OSAKA"}},
@@ -261,6 +262,60 @@ func TestClientAuthRejected(t *testing.T) {
 	line := readLine(t, c)
 	if !strings.Contains(line, "401") {
 		t.Fatalf("expected 401, got %q", line)
+	}
+}
+
+func TestOpenMountpointNoAuth(t *testing.T) {
+	addr, mgr, stop := startCaster(t)
+	defer stop()
+
+	src := connectSourceV1(t, addr, "OPEN", "openpush")
+	defer src.Close()
+	waitOnline(t, mgr, "OPEN")
+
+	// Client sends NO Authorization header.
+	cli, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer cli.Close()
+	io.WriteString(cli, "GET /OPEN HTTP/1.0\r\nUser-Agent: NTRIP test\r\n\r\n")
+
+	br := bufio.NewReader(cli)
+	cli.SetReadDeadline(time.Now().Add(2 * time.Second))
+	status, _ := br.ReadString('\n')
+	if !strings.HasPrefix(status, "ICY 200") {
+		t.Fatalf("open mountpoint: expected ICY 200 without auth, got %q", status)
+	}
+	br.ReadString('\n')
+
+	waitSubscribers(t, mgr, "OPEN", 1)
+	io.WriteString(src, "OPEN-DATA1")
+	buf := make([]byte, 10)
+	cli.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(br, buf); err != nil {
+		t.Fatalf("read open stream: %v", err)
+	}
+	if string(buf) != "OPEN-DATA1" {
+		t.Fatalf("open payload = %q", buf)
+	}
+}
+
+func TestOpenMountpointSourcetableAuthFlag(t *testing.T) {
+	addr, _, stop := startCaster(t)
+	defer stop()
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	io.WriteString(c, "GET / HTTP/1.0\r\n\r\n")
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	data, _ := io.ReadAll(c)
+	s := string(data)
+	// OPEN advertises authentication "N"; TOKYO advertises "B".
+	if !strings.Contains(s, "STR;OPEN;") || !strings.Contains(s, ";N;N;0;") {
+		t.Errorf("expected OPEN STR with auth=N, got:\n%s", s)
 	}
 }
 

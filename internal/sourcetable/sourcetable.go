@@ -119,7 +119,7 @@ func mountpointRecord(mp config.Mountpoint) strRecord {
 		Solution:       mp.Solution,
 		Generator:      mp.Generator,
 		Compression:    mp.Compression,
-		Authentication: mp.Authentication,
+		Authentication: authField(mp.Open, mp.Authentication),
 		Fee:            mp.Fee,
 		Bitrate:        mp.Bitrate,
 		Misc:           mp.Misc,
@@ -130,20 +130,30 @@ func mountpointRecord(mp config.Mountpoint) strRecord {
 // the endpoint at the caster's own position and requires NMEA from clients.
 func handoverRecord(h config.HandoverGroup, lat, lon float64) strRecord {
 	return strRecord{
-		Mountpoint:    h.Name,
-		Identifier:    h.Identifier,
-		Format:        h.Format,
-		FormatDetails: h.FormatDetails,
-		Carrier:       2,
-		NavSystem:     h.NavSystem,
-		Network:       h.Network,
-		Country:       h.Country,
-		Lat:           lat,
-		Lon:           lon,
-		NMEA:          true,
-		Compression:   "none",
-		Misc:          "handover",
+		Mountpoint:     h.Name,
+		Identifier:     h.Identifier,
+		Format:         h.Format,
+		FormatDetails:  h.FormatDetails,
+		Carrier:        2,
+		NavSystem:      h.NavSystem,
+		Network:        h.Network,
+		Country:        h.Country,
+		Lat:            lat,
+		Lon:            lon,
+		NMEA:           true,
+		Compression:    "none",
+		Authentication: authField(h.Open, ""),
+		Misc:           "handover",
 	}
+}
+
+// authField reports the STR authentication column: "N" (none) for open streams,
+// otherwise the configured value (which fields() defaults to "B").
+func authField(open bool, configured string) string {
+	if open {
+		return "N"
+	}
+	return configured
 }
 
 func writeRecord(b *strings.Builder, fields []string) {

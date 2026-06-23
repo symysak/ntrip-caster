@@ -75,6 +75,9 @@ type Mountpoint struct {
 	// Password authenticates the NTRIP server pushing to this mountpoint
 	// (used for both v1 SOURCE and v2 POST). Stored in plaintext.
 	Password string `yaml:"password"`
+	// Open allows clients to read this mountpoint without authentication.
+	// Server (push) authentication is unaffected. Defaults to false.
+	Open bool `yaml:"open"`
 
 	// Sourcetable STR fields.
 	Identifier    string  `yaml:"identifier"`
@@ -103,6 +106,9 @@ type HandoverGroup struct {
 	Name string `yaml:"name"`
 	// Members are mountpoint names eligible for selection.
 	Members []string `yaml:"members"`
+	// Open allows clients to use this handover endpoint without authentication.
+	// Defaults to false.
+	Open bool `yaml:"open"`
 
 	// Sourcetable STR metadata advertised for the handover endpoint itself.
 	Identifier    string `yaml:"identifier"`

@@ -72,6 +72,23 @@ mountpoints:
     lon: 135.5023
     bitrate: 9600
 
+  # `open: true` lets clients read this stream WITHOUT authentication
+  # (anonymous). The push `password` still protects the server side, and the
+  # sourcetable advertises this stream with authentication "N".
+  - name: PUBLIC_RTCM32_MSM4
+    password: public32push
+    identifier: "Public"
+    format: "RTCM 3.2"
+    format_details: "1074,1084,1094,1124,1006,1033"
+    carrier: 2
+    nav_system: "GPS+GLO+GAL+BDS"
+    network: "JP"
+    country: "JPN"
+    lat: 35.0116
+    lon: 135.7681
+    bitrate: 9600
+    open: true
+
 # Handover endpoints. A client connecting here sends NMEA GGA; the caster
 # subscribes it to the nearest online member and re-switches as the client
 # moves. Group members manually so each endpoint serves one RTCM flavor.
