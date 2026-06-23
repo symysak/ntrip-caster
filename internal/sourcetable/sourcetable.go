@@ -20,18 +20,16 @@ func Build(cfg *config.Config, online func(string) bool, onlineOnly bool) string
 	var b strings.Builder
 
 	// CAS record for this caster.
-	host := cfg.Caster.Host
-	port := cfg.Caster.Port
 	writeRecord(&b, []string{
 		"CAS",
-		host,
-		itoa(port),
-		nz(cfg.Caster.Identifier),
-		nz(cfg.Caster.Operator),
-		boolField(cfg.Caster.NMEA),
-		nz(cfg.Caster.Country),
-		ftoa(cfg.Caster.Lat),
-		ftoa(cfg.Caster.Lon),
+		cfg.Caster.Host,
+		formatInt(cfg.Caster.Port),
+		cfg.Caster.Identifier,
+		cfg.Caster.Operator,
+		formatNMEAFlag(cfg.Caster.NMEA),
+		cfg.Caster.Country,
+		formatCoord(cfg.Caster.Lat),
+		formatCoord(cfg.Caster.Lon),
 		"0.0.0.0", "0", "none",
 	})
 
@@ -52,8 +50,8 @@ func Build(cfg *config.Config, online func(string) bool, onlineOnly bool) string
 		if onlineOnly && !slices.ContainsFunc(h.Members, online) {
 			continue
 		}
-		writeRecord(&b, strFields(h.Name, nz(h.Identifier), nz(h.Format), nz(h.FormatDetails),
-			2, nz(h.NavSystem), nz(h.Network), nz(h.Country), cfg.Caster.Lat, cfg.Caster.Lon,
+		writeRecord(&b, strFields(h.Name, h.Identifier, h.Format, h.FormatDetails,
+			2, h.NavSystem, h.Network, h.Country, cfg.Caster.Lat, cfg.Caster.Lon,
 			true, 0, "", "none", "B", "N", 0, "handover"))
 	}
 
@@ -66,23 +64,23 @@ func strFields(name, identifier, format, formatDetails string, carrier int,
 	return []string{
 		"STR",
 		name,
-		nz(identifier),
-		nz(format),
-		nz(formatDetails),
-		itoa(carrier),
-		nz(navSystem),
-		nz(network),
-		nz(country),
-		ftoa(lat),
-		ftoa(lon),
-		boolField(nmea),
-		itoa(solution),
-		nz(generator),
-		nz(compression),
-		def(auth, "B"),
-		def(fee, "N"),
-		itoa(bitrate),
-		nz(misc),
+		identifier,
+		format,
+		formatDetails,
+		formatInt(carrier),
+		navSystem,
+		network,
+		country,
+		formatCoord(lat),
+		formatCoord(lon),
+		formatNMEAFlag(nmea),
+		formatInt(solution),
+		generator,
+		compression,
+		orDefault(auth, "B"),
+		orDefault(fee, "N"),
+		formatInt(bitrate),
+		misc,
 	}
 }
 
@@ -91,20 +89,25 @@ func writeRecord(b *strings.Builder, fields []string) {
 	b.WriteString("\r\n")
 }
 
-func itoa(i int) string { return strconv.Itoa(i) }
-func ftoa(f float64) string {
-	return fmt.Sprintf("%.4f", f)
-}
-func boolField(v bool) string {
-	if v {
+// formatInt renders an integer sourcetable field.
+func formatInt(i int) string { return strconv.Itoa(i) }
+
+// formatCoord renders a latitude/longitude field to four decimal places, as
+// expected in STR/CAS records.
+func formatCoord(deg float64) string { return fmt.Sprintf("%.4f", deg) }
+
+// formatNMEAFlag renders the NMEA capability flag ("1" if NMEA is accepted).
+func formatNMEAFlag(accepted bool) string {
+	if accepted {
 		return "1"
 	}
 	return "0"
 }
-func nz(s string) string { return s }
-func def(s, d string) string {
-	if s == "" {
-		return d
+
+// orDefault returns value, or fallback when value is empty.
+func orDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
 	}
-	return s
+	return value
 }
