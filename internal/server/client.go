@@ -27,8 +27,15 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn, br *bufio.Read
 	_, isMP := cfg.LookupMountpoint(name)
 	group, isHandover := cfg.LookupHandover(name)
 	if name == "" || (!isMP && !isHandover) {
+		reason := "unknown-mountpoint"
+		if name == "" {
+			reason = "root"
+		}
 		body := sourcetable.Build(cfg, s.mgr.Online, false)
 		writeSourcetable(bw, v, s.version, body)
+		s.log.Info("sourcetable served",
+			"remote", conn.RemoteAddr().String(), "agent", req.Header.Get("User-Agent"),
+			"path", req.URL.Path, "reason", reason, "version", int(v))
 		return
 	}
 
@@ -54,6 +61,9 @@ func (s *Server) handleMountpoint(ctx context.Context, conn net.Conn, br *bufio.
 		// Offline: clients expect the sourcetable when a stream is unavailable.
 		body := sourcetable.Build(s.mgr.Config(), s.mgr.Online, false)
 		writeSourcetable(bw, v, s.version, body)
+		s.log.Info("sourcetable served",
+			"remote", sub.Addr, "agent", agent,
+			"path", "/"+name, "reason", "offline-mountpoint", "version", int(v))
 		return
 	}
 	defer mp.Unsubscribe(sub)
