@@ -103,6 +103,7 @@ func (hs *handoverSession) readNMEA(br *bufio.Reader) {
 	for sc.Scan() {
 		if fix, err := nmea.ParseGGA(sc.Text()); err == nil {
 			hs.setPosition(fix.Lat, fix.Lon)
+			hs.srv.log.Debug("handover client GGA", "group", hs.group.Name, "remote", hs.addr, "lat", fix.Lat, "lon", fix.Lon)
 		}
 	}
 }
@@ -146,7 +147,7 @@ func (hs *handoverSession) switchTo(target string) bool {
 		return false
 	}
 	hs.sub, hs.current = sub, target
-	hs.srv.log.Info("handover switch", "group", hs.group.Name, "remote", hs.addr, "mountpoint", target)
+	hs.srv.log.Debug("handover switch", "group", hs.group.Name, "remote", hs.addr, "mountpoint", target)
 	return true
 }
 

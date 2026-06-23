@@ -29,6 +29,7 @@ func main() {
 	flag.Parse()
 
 	logger := newLogger(*logLevel)
+	logger.Info("ntrip-caster starting", "version", version, "config", *configPath, "log-level", *logLevel)
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
