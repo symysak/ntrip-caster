@@ -95,8 +95,9 @@ flowchart LR
 
 ### Handover switching (`server.handleHandover` + `handover.Selector`)
 
-The subscriber object stays constant; only which mountpoint it is attached to
-changes as new GGA fixes arrive, so the client connection is never interrupted.
+A single control loop owns the client connection. The active member changes as
+GGA fixes arrive or the current source drops, so the client connection survives
+switches; it is closed only when no member is online.
 
 ```mermaid
 sequenceDiagram
@@ -105,15 +106,22 @@ sequenceDiagram
     participant Sel as handover.Selector
     participant MP as Mountpoints
     R->>H: GET /AUTO_… (v1/v2)
-    H-->>R: stream OK header
-    loop on each NMEA fix
-        R->>H: $GxGGA (lat, lon)
-        H->>Sel: Nearest(group, lat, lon)
-        Sel-->>H: nearest online member
-        alt member changed
-            H->>MP: Unsubscribe(old) + Subscribe(new)
+    alt no member online
+        H-->>R: SOURCETABLE (fail fast)
+    else at least one online
+        H-->>R: stream OK header
+        loop control loop
+            R->>H: $GxGGA (lat, lon)
+            H->>Sel: Nearest(group, lat, lon)
+            Sel-->>H: nearest online member ("" if none)
+            alt nearest == ""
+                H-->>R: disconnect
+            else member changed
+                H->>MP: Subscribe(new) / drop old
+            end
+            MP-->>R: RTCM from nearest base
+            Note over H,MP: active source drops → re-select<br/>(next-nearest) using last fix
         end
-        MP-->>R: RTCM from nearest base
     end
 ```
 
@@ -137,9 +145,11 @@ sudo systemctl reload ntrip-caster
 
 ## Limitations / notes
 
-- If the base station behind a handover endpoint disconnects, the handover
-  client is dropped (it should reconnect); it is not automatically re-routed
-  to the next-nearest base until reconnect.
+- A handover connection fails immediately (sourcetable response) when no
+  member base station is online. If the active base drops mid-stream, the
+  client is automatically re-routed to the next-nearest online member using
+  its last known position; the connection is closed only when no member
+  remains online.
 - Passwords are plaintext by design of the current config model.
 - NTRIP v2 over TLS is not yet implemented (terminate TLS with a reverse proxy
   if required).

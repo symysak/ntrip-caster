@@ -115,6 +115,20 @@ func writeError(w *bufio.Writer, v protoVersion, server string, code int, status
 	return w.Flush()
 }
 
+// writeStreamChunk writes one stream payload to the client using the framing of
+// the negotiated protocol version (raw bytes for v1, a chunked frame for v2),
+// then flushes.
+func writeStreamChunk(w *bufio.Writer, v protoVersion, data []byte) error {
+	if v == ntripV2 {
+		if err := writeChunk(w, data); err != nil {
+			return err
+		}
+	} else if _, err := w.Write(data); err != nil {
+		return err
+	}
+	return w.Flush()
+}
+
 // writeChunk writes one HTTP chunked-encoding frame.
 func writeChunk(w *bufio.Writer, data []byte) error {
 	if _, err := w.WriteString(strconv.FormatInt(int64(len(data)), 16)); err != nil {

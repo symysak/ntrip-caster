@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -86,72 +87,56 @@ func (s *Server) handleMountpoint(ctx context.Context, conn net.Conn, br *bufio.
 	s.streamToClient(ctx, conn, bw, sub, v)
 }
 
-// handleHandover streams the nearest member mountpoint, switching as the
-// client's reported NMEA GGA position changes.
+// anyMemberOnline reports whether at least one member of the group currently
+// has a connected source.
+func (s *Server) anyMemberOnline(group config.HandoverGroup) bool {
+	return slices.ContainsFunc(group.Members, s.mgr.Online)
+}
+
+// handleHandover streams the member mountpoint nearest the client's reported
+// NMEA position, re-selecting when the client moves or the active source drops.
+// The single client connection is preserved across switches; it is closed only
+// when no member is available (so an all-offline group fails rather than hangs).
 func (s *Server) handleHandover(ctx context.Context, conn net.Conn, br *bufio.Reader, bw *bufio.Writer, req *http.Request, group config.HandoverGroup, v protoVersion, agent string) {
-	sub := caster.NewSubscriber(conn.RemoteAddr().String())
+	addr := conn.RemoteAddr().String()
+
+	// Fail fast if no member has a source connected.
+	if !s.anyMemberOnline(group) {
+		body := sourcetable.Build(s.mgr.Config(), s.mgr.Online, false)
+		writeSourcetable(bw, v, s.version, body)
+		s.log.Info("handover unavailable: no online members",
+			"group", group.Name, "remote", addr, "agent", agent, "version", int(v))
+		return
+	}
+
 	if err := writeStreamOK(bw, v, s.version); err != nil {
 		return
 	}
-	s.log.Info("handover client connected", "group", group.Name, "remote", sub.Addr, "agent", agent, "version", int(v))
-	defer s.log.Info("handover client disconnected", "group", group.Name, "remote", sub.Addr)
+	s.log.Info("handover client connected", "group", group.Name, "remote", addr, "agent", agent, "version", int(v))
+	defer s.log.Info("handover client disconnected", "group", group.Name, "remote", addr)
 
-	var mu sync.Mutex
-	current := "" // currently subscribed member mountpoint
-
-	// switchTo moves the subscriber from the current member to target. A failed
-	// (re)subscribe leaves current empty so the next GGA retries.
-	switchTo := func(target string) {
-		mu.Lock()
-		defer mu.Unlock()
-		if target == "" || target == current {
-			return
+	// Position state, updated by the NMEA reader goroutine.
+	var posMu sync.Mutex
+	var haveFix bool
+	var lat, lon float64
+	fixCh := make(chan struct{}, 1)   // wakes the control loop on a new fix
+	clientGone := make(chan struct{}) // closed when the client read side ends
+	notifyFix := func() {
+		select {
+		case fixCh <- struct{}{}:
+		default:
 		}
-		if current != "" {
-			if old := s.mgr.Mountpoint(current); old != nil {
-				old.Unsubscribe(sub)
-			}
-		}
-		mp := s.mgr.Mountpoint(target)
-		if mp == nil || !mp.Subscribe(sub) {
-			s.log.Debug("handover target unavailable; will retry on next fix",
-				"group", group.Name, "remote", sub.Addr, "mountpoint", target)
-			current = ""
-			return
-		}
-		current = target
-		s.log.Info("handover switch", "group", group.Name, "remote", sub.Addr, "mountpoint", target)
-	}
-	defer func() {
-		mu.Lock()
-		if current != "" {
-			if mp := s.mgr.Mountpoint(current); mp != nil {
-				mp.Unsubscribe(sub)
-			}
-		}
-		mu.Unlock()
-	}()
-
-	selectNearest := func(lat, lon float64) {
-		cfg := s.mgr.Config()
-		g, ok := cfg.LookupHandover(group.Name)
-		if !ok {
-			g = group // fall back to the group captured at connect time
-		}
-		sel := handover.NewSelector(cfg, s.mgr.Online)
-		switchTo(sel.Nearest(g, lat, lon))
 	}
 
 	// Seed from an initial position carried in the request header, if any.
 	if gga := req.Header.Get("Ntrip-GGA"); gga != "" {
 		if fix, err := nmea.ParseGGA(gga); err == nil {
-			selectNearest(fix.Lat, fix.Lon)
+			lat, lon, haveFix = fix.Lat, fix.Lon, true
 		}
 	}
 
-	// Read NMEA GGA from the client and re-select on each fix.
 	go func() {
-		defer sub.Close()
+		defer close(clientGone)
 		conn.SetReadDeadline(time.Time{})
 		sc := bufio.NewScanner(br)
 		sc.Buffer(make([]byte, 0, 4096), 64*1024)
@@ -160,11 +145,104 @@ func (s *Server) handleHandover(ctx context.Context, conn net.Conn, br *bufio.Re
 			if err != nil {
 				continue
 			}
-			selectNearest(fix.Lat, fix.Lon)
+			posMu.Lock()
+			lat, lon, haveFix = fix.Lat, fix.Lon, true
+			posMu.Unlock()
+			notifyFix()
 		}
 	}()
 
-	s.streamToClient(ctx, conn, bw, sub, v)
+	nearestFor := func(la, lo float64) string {
+		cfg := s.mgr.Config()
+		g, ok := cfg.LookupHandover(group.Name)
+		if !ok {
+			g = group // fall back to the group captured at connect time
+		}
+		return handover.NewSelector(cfg, s.mgr.Online).Nearest(g, la, lo)
+	}
+
+	current := "" // currently subscribed member, "" if none
+	var sub *caster.Subscriber
+	detach := func() {
+		if sub != nil {
+			if current != "" {
+				if mp := s.mgr.Mountpoint(current); mp != nil {
+					mp.Unsubscribe(sub)
+				}
+			}
+			sub.Close()
+		}
+		sub, current = nil, ""
+	}
+	defer detach()
+
+	for {
+		posMu.Lock()
+		hf, la, lo := haveFix, lat, lon
+		posMu.Unlock()
+
+		if !hf {
+			// Connected; waiting for the client's first NMEA fix.
+			select {
+			case <-ctx.Done():
+				return
+			case <-clientGone:
+				return
+			case <-fixCh:
+				continue
+			}
+		}
+
+		target := nearestFor(la, lo)
+		if target == "" {
+			// No member is online (or locatable) for this position.
+			s.log.Info("handover: no online member available; disconnecting",
+				"group", group.Name, "remote", addr)
+			return
+		}
+
+		if target != current {
+			detach()
+			mp := s.mgr.Mountpoint(target)
+			ns := caster.NewSubscriber(addr)
+			if mp == nil || !mp.Subscribe(ns) {
+				continue // raced with the source detaching; re-select
+			}
+			sub, current = ns, target
+			s.log.Info("handover switch", "group", group.Name, "remote", addr, "mountpoint", target)
+		}
+
+		// Stream the current member until it ends, the nearest member changes,
+		// the source drops, or the client leaves.
+	stream:
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-clientGone:
+				return
+			case <-sub.Done():
+				detach() // source disconnected; re-select on the next iteration
+				break stream
+			case <-fixCh:
+				posMu.Lock()
+				la, lo = lat, lon
+				posMu.Unlock()
+				if nearestFor(la, lo) != current {
+					break stream // outer loop performs the switch
+				}
+			case chunk, ok := <-sub.Chunks():
+				if !ok {
+					detach()
+					break stream
+				}
+				conn.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
+				if err := writeStreamChunk(bw, v, chunk); err != nil {
+					return
+				}
+			}
+		}
+	}
 }
 
 // drainClient reads and discards client-to-caster bytes (NMEA, keep-alives) so

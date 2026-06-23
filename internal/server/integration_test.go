@@ -70,6 +70,16 @@ func connectSourceV1(t *testing.T, addr, mp, pass string) net.Conn {
 	return c
 }
 
+func readN(t *testing.T, br *bufio.Reader, c net.Conn, n int) string {
+	t.Helper()
+	buf := make([]byte, n)
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := io.ReadFull(br, buf); err != nil {
+		t.Fatalf("read %d bytes: %v", n, err)
+	}
+	return string(buf)
+}
+
 func readLine(t *testing.T, c net.Conn) string {
 	t.Helper()
 	c.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -243,6 +253,67 @@ func TestHandoverSelectsNearest(t *testing.T) {
 	}
 	if got := string(buf2[:n]); got != "FROM-OSAKA" {
 		t.Fatalf("post-switch payload = %q, want FROM-OSAKA", got)
+	}
+}
+
+func TestHandoverAllOffline(t *testing.T) {
+	addr, _, stop := startCaster(t)
+	defer stop()
+
+	// No member sources are connected.
+	cli, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer cli.Close()
+	io.WriteString(cli, "GET /AUTO HTTP/1.0\r\nUser-Agent: test\r\nAuthorization: "+basicHeader("rover1", "pw1")+"\r\n\r\n")
+
+	line := readLine(t, cli)
+	if !strings.HasPrefix(line, "SOURCETABLE 200") {
+		t.Fatalf("all members offline: expected SOURCETABLE (fail), got %q", line)
+	}
+}
+
+func TestHandoverRerouteOnSourceDrop(t *testing.T) {
+	addr, mgr, stop := startCaster(t)
+	defer stop()
+
+	tokyo := connectSourceV1(t, addr, "TOKYO", "tpush")
+	osaka := connectSourceV1(t, addr, "OSAKA", "opush")
+	defer osaka.Close()
+	waitOnline(t, mgr, "TOKYO")
+	waitOnline(t, mgr, "OSAKA")
+
+	cli, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer cli.Close()
+	io.WriteString(cli, "GET /AUTO HTTP/1.0\r\nUser-Agent: test\r\nAuthorization: "+basicHeader("rover1", "pw1")+"\r\n\r\n")
+
+	br := bufio.NewReader(cli)
+	cli.SetReadDeadline(time.Now().Add(2 * time.Second))
+	status, _ := br.ReadString('\n')
+	if !strings.HasPrefix(status, "ICY 200") {
+		t.Fatalf("expected ICY 200, got %q", status)
+	}
+	br.ReadString('\n')
+
+	// Position near Tokyo -> attach TOKYO.
+	io.WriteString(cli, "$GPGGA,123519,3526.6,N,13938.2,E,1,08,0.9,40,M,46,M,,*00\r\n")
+	waitSubscribers(t, mgr, "TOKYO", 1)
+	io.WriteString(tokyo, "TOKYO-1")
+	if got := readN(t, br, cli, 7); got != "TOKYO-1" {
+		t.Fatalf("pre-drop payload = %q", got)
+	}
+
+	// Drop the TOKYO source. Without sending a new GGA, the client should be
+	// re-routed to the next-nearest online member (OSAKA) and stay connected.
+	tokyo.Close()
+	waitSubscribers(t, mgr, "OSAKA", 1)
+	io.WriteString(osaka, "OSAKA-1")
+	if got := readN(t, br, cli, 7); got != "OSAKA-1" {
+		t.Fatalf("post-reroute payload = %q (expected OSAKA-1)", got)
 	}
 }
 

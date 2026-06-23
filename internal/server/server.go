@@ -126,16 +126,7 @@ func (s *Server) streamToClient(ctx context.Context, conn net.Conn, bw *bufio.Wr
 				return
 			}
 			conn.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
-			var werr error
-			if v == ntripV2 {
-				werr = writeChunk(bw, chunk)
-			} else {
-				_, werr = bw.Write(chunk)
-			}
-			if werr == nil {
-				werr = bw.Flush()
-			}
-			if werr != nil {
+			if err := writeStreamChunk(bw, v, chunk); err != nil {
 				return
 			}
 		}
