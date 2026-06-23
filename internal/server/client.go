@@ -38,15 +38,16 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn, br *bufio.Read
 		return
 	}
 
+	agent := req.Header.Get("User-Agent")
 	if isHandover {
-		s.handleHandover(ctx, conn, br, bw, req, group, v)
+		s.handleHandover(ctx, conn, br, bw, req, group, v, agent)
 		return
 	}
-	s.handleMountpoint(ctx, conn, br, bw, name, v)
+	s.handleMountpoint(ctx, conn, br, bw, name, v, agent)
 }
 
 // handleMountpoint streams a single static mountpoint to the client.
-func (s *Server) handleMountpoint(ctx context.Context, conn net.Conn, br *bufio.Reader, bw *bufio.Writer, name string, v protoVersion) {
+func (s *Server) handleMountpoint(ctx context.Context, conn net.Conn, br *bufio.Reader, bw *bufio.Writer, name string, v protoVersion, agent string) {
 	mp := s.mgr.Mountpoint(name)
 	sub := caster.NewSubscriber(conn.RemoteAddr().String())
 	if mp == nil || !mp.Subscribe(sub) {
@@ -60,7 +61,7 @@ func (s *Server) handleMountpoint(ctx context.Context, conn net.Conn, br *bufio.
 	if err := writeStreamOK(bw, v, s.version); err != nil {
 		return
 	}
-	s.log.Info("client connected", "mountpoint", name, "remote", sub.Addr, "version", int(v))
+	s.log.Info("client connected", "mountpoint", name, "remote", sub.Addr, "agent", agent, "version", int(v))
 	defer s.log.Info("client disconnected", "mountpoint", name, "remote", sub.Addr)
 
 	// Detect client disconnect (and drain any NMEA the client sends).
@@ -71,12 +72,12 @@ func (s *Server) handleMountpoint(ctx context.Context, conn net.Conn, br *bufio.
 
 // handleHandover streams the nearest member mountpoint, switching as the
 // client's reported NMEA GGA position changes.
-func (s *Server) handleHandover(ctx context.Context, conn net.Conn, br *bufio.Reader, bw *bufio.Writer, req *http.Request, group config.HandoverGroup, v protoVersion) {
+func (s *Server) handleHandover(ctx context.Context, conn net.Conn, br *bufio.Reader, bw *bufio.Writer, req *http.Request, group config.HandoverGroup, v protoVersion, agent string) {
 	sub := caster.NewSubscriber(conn.RemoteAddr().String())
 	if err := writeStreamOK(bw, v, s.version); err != nil {
 		return
 	}
-	s.log.Info("handover client connected", "group", group.Name, "remote", sub.Addr, "version", int(v))
+	s.log.Info("handover client connected", "group", group.Name, "remote", sub.Addr, "agent", agent, "version", int(v))
 	defer s.log.Info("handover client disconnected", "group", group.Name, "remote", sub.Addr)
 
 	var mu sync.Mutex
