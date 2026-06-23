@@ -93,9 +93,10 @@ flowchart LR
     BC -. "buffer full" .-> X["drop slow client"]
 ```
 
-### Handover switching (`server.handleHandover` + `handover.Selector`)
+### Handover switching (`server.handoverSession` + `handover.Selector`)
 
-A single control loop owns the client connection. The active member changes as
+`handleHandover` builds a `handoverSession` (in `handover_session.go`) whose
+single control loop owns the client connection. The active member changes as
 GGA fixes arrive or the current source drops, so the client connection survives
 switches; it is closed only when no member is online.
 
