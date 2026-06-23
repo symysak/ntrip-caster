@@ -38,10 +38,7 @@ func Build(cfg *config.Config, online func(string) bool, onlineOnly bool) string
 		if onlineOnly && !online(mp.Name) {
 			continue
 		}
-		writeRecord(&b, strFields(mp.Name, mp.Identifier, mp.Format, mp.FormatDetails,
-			mp.Carrier, mp.NavSystem, mp.Network, mp.Country, mp.Lat, mp.Lon,
-			mp.NMEA, mp.Solution, mp.Generator, mp.Compression,
-			mp.Authentication, mp.Fee, mp.Bitrate, mp.Misc))
+		writeRecord(&b, mountpointRecord(mp).fields())
 	}
 
 	// STR records for handover endpoints (advertised as NMEA-required streams).
@@ -50,37 +47,102 @@ func Build(cfg *config.Config, online func(string) bool, onlineOnly bool) string
 		if onlineOnly && !slices.ContainsFunc(h.Members, online) {
 			continue
 		}
-		writeRecord(&b, strFields(h.Name, h.Identifier, h.Format, h.FormatDetails,
-			2, h.NavSystem, h.Network, h.Country, cfg.Caster.Lat, cfg.Caster.Lon,
-			true, 0, "", "none", "B", "N", 0, "handover"))
+		writeRecord(&b, handoverRecord(h, cfg.Caster.Lat, cfg.Caster.Lon).fields())
 	}
 
 	return b.String()
 }
 
-func strFields(name, identifier, format, formatDetails string, carrier int,
-	navSystem, network, country string, lat, lon float64, nmea bool, solution int,
-	generator, compression, auth, fee string, bitrate int, misc string) []string {
+// strRecord is one sourcetable "STR" entry. Named fields make the field order
+// explicit at every construction site, instead of a long positional argument
+// list.
+type strRecord struct {
+	Mountpoint     string
+	Identifier     string
+	Format         string
+	FormatDetails  string
+	Carrier        int
+	NavSystem      string
+	Network        string
+	Country        string
+	Lat            float64
+	Lon            float64
+	NMEA           bool
+	Solution       int
+	Generator      string
+	Compression    string
+	Authentication string // defaults to "B"
+	Fee            string // defaults to "N"
+	Bitrate        int
+	Misc           string
+}
+
+// fields renders the record into the ordered, semicolon-joined STR columns.
+func (r strRecord) fields() []string {
 	return []string{
 		"STR",
-		name,
-		identifier,
-		format,
-		formatDetails,
-		formatInt(carrier),
-		navSystem,
-		network,
-		country,
-		formatCoord(lat),
-		formatCoord(lon),
-		formatNMEAFlag(nmea),
-		formatInt(solution),
-		generator,
-		compression,
-		orDefault(auth, "B"),
-		orDefault(fee, "N"),
-		formatInt(bitrate),
-		misc,
+		r.Mountpoint,
+		r.Identifier,
+		r.Format,
+		r.FormatDetails,
+		formatInt(r.Carrier),
+		r.NavSystem,
+		r.Network,
+		r.Country,
+		formatCoord(r.Lat),
+		formatCoord(r.Lon),
+		formatNMEAFlag(r.NMEA),
+		formatInt(r.Solution),
+		r.Generator,
+		r.Compression,
+		orDefault(r.Authentication, "B"),
+		orDefault(r.Fee, "N"),
+		formatInt(r.Bitrate),
+		r.Misc,
+	}
+}
+
+// mountpointRecord builds the STR entry for a configured mountpoint.
+func mountpointRecord(mp config.Mountpoint) strRecord {
+	return strRecord{
+		Mountpoint:     mp.Name,
+		Identifier:     mp.Identifier,
+		Format:         mp.Format,
+		FormatDetails:  mp.FormatDetails,
+		Carrier:        mp.Carrier,
+		NavSystem:      mp.NavSystem,
+		Network:        mp.Network,
+		Country:        mp.Country,
+		Lat:            mp.Lat,
+		Lon:            mp.Lon,
+		NMEA:           mp.NMEA,
+		Solution:       mp.Solution,
+		Generator:      mp.Generator,
+		Compression:    mp.Compression,
+		Authentication: mp.Authentication,
+		Fee:            mp.Fee,
+		Bitrate:        mp.Bitrate,
+		Misc:           mp.Misc,
+	}
+}
+
+// handoverRecord builds the STR entry for a handover endpoint. It advertises
+// the endpoint at the caster's own position and requires NMEA from clients.
+func handoverRecord(h config.HandoverGroup, lat, lon float64) strRecord {
+	return strRecord{
+		Mountpoint:    h.Name,
+		Identifier:    h.Identifier,
+		Format:        h.Format,
+		FormatDetails: h.FormatDetails,
+		Carrier:       2,
+		NavSystem:     h.NavSystem,
+		Network:       h.Network,
+		Country:       h.Country,
+		Lat:           lat,
+		Lon:           lon,
+		NMEA:          true,
+		Compression:   "none",
+		Misc:          "handover",
 	}
 }
 
