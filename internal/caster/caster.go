@@ -85,11 +85,9 @@ func (m *Manager) Online(name string) bool {
 type Mountpoint struct {
 	Name string
 
-	mu       sync.RWMutex
-	source   *Source
-	subs     map[*Subscriber]struct{}
-	bytesIn  uint64
-	lastData time.Time
+	mu     sync.RWMutex
+	source *Source
+	subs   map[*Subscriber]struct{}
 }
 
 // Source is a connected NTRIP server pushing data into a mountpoint.
@@ -146,12 +144,11 @@ func (mp *Mountpoint) SubscriberCount() int {
 	return len(mp.subs)
 }
 
-// Broadcast fans a chunk of stream bytes out to every subscriber. The caller
-// must not reuse data after the call; ownership transfers to the subscribers.
-// Subscribers whose queue is full are dropped.
+// Broadcast fans a chunk of stream bytes out to every subscriber. The chunk is
+// shared read-only with all subscribers, so the caller must neither mutate nor
+// reuse data after the call. Subscribers whose queue is full are dropped.
 func (mp *Mountpoint) Broadcast(data []byte) {
 	mp.mu.Lock()
-	mp.bytesIn += uint64(len(data))
 	var slow []*Subscriber
 	for s := range mp.subs {
 		select {
