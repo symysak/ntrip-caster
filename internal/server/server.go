@@ -92,9 +92,10 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	}
 }
 
-// versionOf reports the NTRIP protocol version requested by a client.
+// versionOf reports the NTRIP protocol version from the Ntrip-Version header:
+// "Ntrip/2.0" selects v2; anything else (including a missing header) is v1.
 func versionOf(r *http.Request) protoVersion {
-	if strings.Contains(strings.ToLower(r.Header.Get("Ntrip-Version")), "ntrip/2") {
+	if strings.EqualFold(r.Header.Get("Ntrip-Version"), "Ntrip/2.0") {
 		return ntripV2
 	}
 	return ntripV1
