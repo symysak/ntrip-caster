@@ -9,9 +9,9 @@ listen: ":2101"
 # Caster identity, advertised in the sourcetable CAS record.
 caster:
   identifier: "Example NTRIP Caster"
-  operator: "HomeNOC"
+  operator: "Yoshiaki Suyama"
   country: "JPN"
-  host: "caster.example.jp"
+  host: "caster.suyama.ne.jp"
   port: 2101
   lat: 35.6812
   lon: 139.7671
