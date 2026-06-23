@@ -1,0 +1,28 @@
+[Unit]
+Description=NTRIP Caster
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust paths to your install.
+ExecStart=/usr/local/bin/ntrip-caster -config /etc/ntrip-caster/config.yaml
+# `systemctl reload ntrip-caster` hot-reloads users / mountpoints / handover.
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2
+
+# Run as an unprivileged user. To bind port < 1024, grant the capability:
+#   AmbientCapabilities=CAP_NET_BIND_SERVICE
+User=ntrip
+Group=ntrip
+
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/etc/ntrip-caster
+
+[Install]
+WantedBy=multi-user.target

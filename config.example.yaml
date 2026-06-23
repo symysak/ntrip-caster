@@ -1,0 +1,87 @@
+# ntrip-caster configuration (YAML)
+#
+# Reloadable on `systemctl reload` (SIGHUP): client_users, mountpoints, handover.
+# Changing `listen` requires a restart.
+
+# TCP listen address. Standard NTRIP port is 2101.
+listen: ":2101"
+
+# Caster identity, advertised in the sourcetable CAS record.
+caster:
+  identifier: "Example NTRIP Caster"
+  operator: "HomeNOC"
+  country: "JPN"
+  host: "caster.example.jp"
+  port: 2101
+  lat: 35.6812
+  lon: 139.7671
+  nmea: true
+
+# NTRIP client (rover) credentials. Passwords are stored in plaintext.
+# `mountpoints` lists the stream/handover names the user may read ("*" = all).
+client_users:
+  - username: rover1
+    password: rover1pass
+    mountpoints: ["*"]
+  - username: rover2
+    password: rover2pass
+    mountpoints: ["AUTO_RTCM32_MSM4", "TOKYO_RTCM32_MSM4"]
+
+# Mountpoints that NTRIP servers (base stations) push into.
+# `password` authenticates the pushing server (v1 SOURCE password / v2 POST
+# Basic-auth password). `lat`/`lon` are used for handover nearest-base ranking.
+mountpoints:
+  - name: TOKYO_RTCM30
+    password: tokyo30push
+    identifier: "Tokyo"
+    format: "RTCM 3.0"
+    format_details: "1004(1),1006(10),1008(10),1012(1)"
+    carrier: 2
+    nav_system: "GPS+GLO"
+    network: "JP"
+    country: "JPN"
+    lat: 35.6586
+    lon: 139.7454
+    nmea: false
+    generator: "TRIMBLE"
+    bitrate: 9600
+
+  - name: TOKYO_RTCM32_MSM4
+    password: tokyo32push
+    identifier: "Tokyo"
+    format: "RTCM 3.2"
+    format_details: "1074,1084,1094,1124,1006,1033"
+    carrier: 2
+    nav_system: "GPS+GLO+GAL+BDS"
+    network: "JP"
+    country: "JPN"
+    lat: 35.6586
+    lon: 139.7454
+    bitrate: 9600
+
+  - name: OSAKA_RTCM32_MSM4
+    password: osaka32push
+    identifier: "Osaka"
+    format: "RTCM 3.2"
+    format_details: "1074,1084,1094,1124,1006,1033"
+    carrier: 2
+    nav_system: "GPS+GLO+GAL+BDS"
+    network: "JP"
+    country: "JPN"
+    lat: 34.6937
+    lon: 135.5023
+    bitrate: 9600
+
+# Handover endpoints. A client connecting here sends NMEA GGA; the caster
+# subscribes it to the nearest online member and re-switches as the client
+# moves. Group members manually so each endpoint serves one RTCM flavor.
+handover:
+  - name: AUTO_RTCM32_MSM4
+    identifier: "Nearest RTCM3.2 MSM4"
+    format: "RTCM 3.2"
+    nav_system: "GPS+GLO+GAL+BDS"
+    network: "JP"
+    country: "JPN"
+    members:
+      - TOKYO_RTCM32_MSM4
+      - OSAKA_RTCM32_MSM4
