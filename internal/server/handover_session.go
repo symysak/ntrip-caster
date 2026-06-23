@@ -126,15 +126,17 @@ func (hs *handoverSession) position() (haveFix bool, lat, lon float64) {
 	return hs.haveFix, hs.lat, hs.lon
 }
 
-// nearest resolves the nearest online member for the given position, using the
-// live config so reloads take effect.
-func (hs *handoverSession) nearest(lat, lon float64) string {
+// selectMember resolves which member to serve for the given position, applying
+// the group's hysteresis margin relative to the currently attached member. It
+// uses the live config so reloads (including margin changes) take effect.
+func (hs *handoverSession) selectMember(lat, lon float64) string {
 	cfg := hs.srv.mgr.Config()
 	g, ok := cfg.LookupHandover(hs.group.Name)
 	if !ok {
 		g = hs.group // fall back to the group captured at connect time
 	}
-	return handover.NewSelector(cfg, hs.srv.mgr.Online).Nearest(g, lat, lon)
+	return handover.NewSelector(cfg, hs.srv.mgr.Online).
+		Select(g, lat, lon, hs.current, g.SwitchMarginKm)
 }
 
 // switchTo detaches the current member and subscribes to target. It returns
@@ -181,7 +183,7 @@ func (hs *handoverSession) run(ctx context.Context) {
 			}
 		}
 
-		target := hs.nearest(lat, lon)
+		target := hs.selectMember(lat, lon)
 		if target == "" {
 			// No member is online (or locatable) for this position.
 			hs.srv.log.Info("handover: no online member available; disconnecting",
@@ -212,8 +214,8 @@ func (hs *handoverSession) stream(ctx context.Context) bool {
 			return true
 		case <-hs.fixCh:
 			_, lat, lon := hs.position()
-			if hs.nearest(lat, lon) != hs.current {
-				return true // a different member is now nearest; outer loop switches
+			if hs.selectMember(lat, lon) != hs.current {
+				return true // a different member should serve now; outer loop switches
 			}
 		case chunk, ok := <-hs.sub.Chunks():
 			if !ok {

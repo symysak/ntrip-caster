@@ -99,6 +99,11 @@ handover:
     nav_system: "GPS+GLO+GAL+BDS"
     network: "JP"
     country: "JPN"
+    # Hysteresis margin (km) to prevent flapping at a boundary: once attached,
+    # a client only switches to another base that is more than this many km
+    # closer than its current one. A base disconnect always fails over
+    # immediately regardless of this margin. 0 = always use the nearest.
+    switch_margin_km: 10
     members:
       - TOKYO_RTCM32_MSM4
       - OSAKA_RTCM32_MSM4

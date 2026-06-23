@@ -109,6 +109,12 @@ type HandoverGroup struct {
 	// Open allows clients to use this handover endpoint without authentication.
 	// Defaults to false.
 	Open bool `yaml:"open"`
+	// SwitchMarginKm is the hysteresis margin (km) that suppresses flapping
+	// near a boundary: once attached, a client switches to another member only
+	// if that member is closer than the current one by more than this margin.
+	// 0 (default) means always use the strictly nearest member. A source
+	// disconnect bypasses the margin (immediate failover).
+	SwitchMarginKm float64 `yaml:"switch_margin_km"`
 
 	// Sourcetable STR metadata advertised for the handover endpoint itself.
 	Identifier    string `yaml:"identifier"`

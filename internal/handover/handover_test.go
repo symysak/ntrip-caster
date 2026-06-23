@@ -42,6 +42,43 @@ func TestNearest(t *testing.T) {
 	}
 }
 
+func TestSelectHysteresis(t *testing.T) {
+	cfg := &config.Config{
+		Mountpoints: []config.Mountpoint{
+			{Name: "TOKYO", Lat: 35.6586, Lon: 139.7454},
+			{Name: "OSAKA", Lat: 34.6937, Lon: 135.5023},
+		},
+	}
+	group := config.HandoverGroup{Name: "AUTO", Members: []string{"TOKYO", "OSAKA"}}
+	allOnline := func(string) bool { return true }
+	sel := NewSelector(cfg, allOnline)
+
+	// A point clearly nearer OSAKA than TOKYO.
+	lat, lon := 34.6901, 135.1955 // Kobe
+	dTokyo := HaversineKm(lat, lon, 35.6586, 139.7454)
+	dOsaka := HaversineKm(lat, lon, 34.6937, 135.5023)
+	diff := dTokyo - dOsaka // how much closer OSAKA is (positive)
+
+	// Currently on TOKYO. With a margin larger than the gap, stay on TOKYO.
+	if got := sel.Select(group, lat, lon, "TOKYO", diff+10); got != "TOKYO" {
+		t.Errorf("within margin: got %q, want TOKYO (stay)", got)
+	}
+	// With a margin smaller than the gap, switch to the closer OSAKA.
+	if got := sel.Select(group, lat, lon, "TOKYO", diff-10); got != "OSAKA" {
+		t.Errorf("beyond margin: got %q, want OSAKA (switch)", got)
+	}
+	// No current member: pick the nearest regardless of margin.
+	if got := sel.Select(group, lat, lon, "", 1e9); got != "OSAKA" {
+		t.Errorf("no current: got %q, want OSAKA", got)
+	}
+
+	// Failover: current member offline -> nearest online, margin ignored.
+	onlyOsaka := func(name string) bool { return name == "OSAKA" }
+	if got := NewSelector(cfg, onlyOsaka).Select(group, lat, lon, "TOKYO", 1e9); got != "OSAKA" {
+		t.Errorf("current offline: got %q, want OSAKA (failover)", got)
+	}
+}
+
 func TestHaversineKm(t *testing.T) {
 	// Tokyo to Osaka is roughly 400 km.
 	d := HaversineKm(35.6586, 139.7454, 34.6937, 135.5023)

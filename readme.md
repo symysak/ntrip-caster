@@ -100,6 +100,11 @@ single control loop owns the client connection. The active member changes as
 GGA fixes arrive or the current source drops, so the client connection survives
 switches; it is closed only when no member is online.
 
+A per-group `switch_margin_km` applies **hysteresis** to avoid flapping at a
+boundary: once attached, a client only switches to a base that is more than the
+margin closer than its current one. A source disconnect bypasses the margin
+(immediate failover to the nearest remaining member).
+
 ```mermaid
 sequenceDiagram
     participant R as Rover
