@@ -48,6 +48,73 @@ Data flow: an NTRIP server attaches as the single source of a mountpoint; its
 bytes are copied and broadcast to every subscribed client. Slow clients whose
 queue overflows are disconnected rather than served a corrupted stream.
 
+## Processing flow
+
+### Connection dispatch (`server.handleConn`)
+
+Every connection is one raw TCP socket. `handleConn` peeks the first bytes and
+routes by request kind; `versionOf` then picks v1/v2 framing from the
+`Ntrip-Version` header.
+
+```mermaid
+flowchart TD
+    A["handleConn<br/>peek first bytes"] -->|"SOURCE …"| B["handleSourceV1<br/>(v1 push)"]
+    A -->|"HTTP POST"| C["handleSourceV2<br/>(v2 push, Basic auth)"]
+    A -->|"HTTP GET"| D["handleClient"]
+
+    B --> E["runSource"]
+    C --> E
+    E --> F{"AttachSource<br/>already has a source?"}
+    F -->|yes| G["409 / ERROR — reject"]
+    F -->|no| H["ack, then read loop:<br/>copy chunk → Broadcast"]
+
+    D --> I{"lookup path"}
+    I -->|"root / unknown / offline"| J["writeSourcetable"]
+    I -->|"auth fails"| K["401 Unauthorized"]
+    I -->|"mountpoint"| L["handleMountpoint"]
+    I -->|"handover group"| M["handleHandover"]
+```
+
+### Source → client fan-out (`caster`)
+
+One source feeds many clients. `Broadcast` non-blocking-sends each chunk to
+every subscriber's buffered channel; a subscriber that falls behind is dropped.
+
+```mermaid
+flowchart LR
+    SRV["NTRIP server"] -->|"RTCM bytes"| RS["runSource<br/>read loop"]
+    RS -->|"copy chunk"| BC["Mountpoint.Broadcast"]
+    BC --> Q1["(sub ch #1)"]
+    BC --> Q2["(sub ch #2)"]
+    Q1 --> W1["streamToClient → rover #1"]
+    Q2 --> W2["streamToClient → rover #2"]
+    BC -. "buffer full" .-> X["drop slow client"]
+```
+
+### Handover switching (`server.handleHandover` + `handover.Selector`)
+
+The subscriber object stays constant; only which mountpoint it is attached to
+changes as new GGA fixes arrive, so the client connection is never interrupted.
+
+```mermaid
+sequenceDiagram
+    participant R as Rover
+    participant H as handleHandover
+    participant Sel as handover.Selector
+    participant MP as Mountpoints
+    R->>H: GET /AUTO_… (v1/v2)
+    H-->>R: stream OK header
+    loop on each NMEA fix
+        R->>H: $GxGGA (lat, lon)
+        H->>Sel: Nearest(group, lat, lon)
+        Sel-->>H: nearest online member
+        alt member changed
+            H->>MP: Unsubscribe(old) + Subscribe(new)
+        end
+        MP-->>R: RTCM from nearest base
+    end
+```
+
 ## Configuration
 
 See [`config.example.yaml`](config.example.yaml). Reloadable keys:
