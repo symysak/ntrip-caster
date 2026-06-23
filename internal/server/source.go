@@ -32,6 +32,7 @@ func (s *Server) handleSourceV1(ctx context.Context, conn net.Conn, br *bufio.Re
 	}
 	fields := strings.Fields(strings.TrimSpace(line))
 	if len(fields) < 3 {
+		s.log.Debug("malformed SOURCE request", "remote", conn.RemoteAddr().String())
 		writeRaw(bw, "ERROR - Bad Request\r\n")
 		return
 	}
@@ -49,10 +50,14 @@ func (s *Server) handleSourceV1(ctx context.Context, conn net.Conn, br *bufio.Re
 	cfg := s.mgr.Config()
 	mp, ok := cfg.LookupMountpoint(name)
 	if !ok {
+		s.log.Warn("source rejected: unknown mountpoint",
+			"remote", conn.RemoteAddr().String(), "mountpoint", name, "agent", agent, "version", 1)
 		writeRaw(bw, "ERROR - Bad Mountpoint\r\n")
 		return
 	}
 	if !authSourcePassword(mp, password) {
+		s.log.Warn("source auth failed",
+			"remote", conn.RemoteAddr().String(), "mountpoint", name, "agent", agent, "version", 1)
 		writeRaw(bw, "ERROR - Bad Password\r\n")
 		return
 	}
@@ -63,18 +68,22 @@ func (s *Server) handleSourceV1(ctx context.Context, conn net.Conn, br *bufio.Re
 // handleSourceV2 handles an NTRIP 2.0 server push via HTTP POST with Basic auth.
 func (s *Server) handleSourceV2(ctx context.Context, conn net.Conn, bw *bufio.Writer, req *http.Request) {
 	name := mountpointName(req.URL.Path)
+	agent := req.Header.Get("User-Agent")
 	cfg := s.mgr.Config()
 	mp, ok := cfg.LookupMountpoint(name)
 	if !ok {
+		s.log.Warn("source rejected: unknown mountpoint",
+			"remote", conn.RemoteAddr().String(), "mountpoint", name, "agent", agent, "version", 2)
 		writeError(bw, ntripV2, s.version, 404, "Not Found")
 		return
 	}
-	_, pass, hasAuth := basicCreds(req)
+	user, pass, hasAuth := basicCreds(req)
 	if !hasAuth || !authSourcePassword(mp, pass) {
+		s.log.Warn("source auth failed",
+			"remote", conn.RemoteAddr().String(), "mountpoint", name, "user", user, "agent", agent, "version", 2)
 		writeUnauthorized(bw, ntripV2, s.version, "NTRIP "+name)
 		return
 	}
-	agent := req.Header.Get("User-Agent")
 	s.runSource(ctx, conn, bw, req.Body, name, agent, ntripV2)
 }
 

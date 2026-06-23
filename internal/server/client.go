@@ -43,6 +43,10 @@ func (s *Server) handleClient(ctx context.Context, conn net.Conn, br *bufio.Read
 	// configured as open (anonymous read access).
 	open := (isHandover && group.Open) || (isMP && mpCfg.Open)
 	if !open && !authClient(cfg, req, name) {
+		user, _, _ := basicCreds(req)
+		s.log.Warn("client auth failed",
+			"remote", conn.RemoteAddr().String(), "user", user, "stream", name,
+			"agent", req.Header.Get("User-Agent"), "version", int(v))
 		writeUnauthorized(bw, v, s.version, "NTRIP "+name)
 		return
 	}
@@ -110,6 +114,8 @@ func (s *Server) handleHandover(ctx context.Context, conn net.Conn, br *bufio.Re
 		}
 		mp := s.mgr.Mountpoint(target)
 		if mp == nil || !mp.Subscribe(sub) {
+			s.log.Debug("handover target unavailable; will retry on next fix",
+				"group", group.Name, "remote", sub.Addr, "mountpoint", target)
 			current = ""
 			return
 		}

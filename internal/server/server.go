@@ -78,6 +78,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 	req, err := http.ReadRequest(br)
 	if err != nil {
+		s.log.Debug("bad request", "remote", conn.RemoteAddr().String(), "error", err)
 		writeError(bw, ntripV1, s.version, 400, "Bad Request")
 		return
 	}
@@ -88,6 +89,7 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	case http.MethodPost:
 		s.handleSourceV2(ctx, conn, bw, req)
 	default:
+		s.log.Debug("method not allowed", "remote", conn.RemoteAddr().String(), "method", req.Method)
 		writeError(bw, versionOf(req), s.version, 405, "Method Not Allowed")
 	}
 }
