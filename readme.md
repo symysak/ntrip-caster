@@ -50,6 +50,43 @@ Data flow: an NTRIP server attaches as the single source of a mountpoint; its
 bytes are copied and broadcast to every subscribed client. Slow clients whose
 queue overflows are disconnected rather than served a corrupted stream.
 
+### Data model
+
+The central concept is the **mountpoint**: a named relay hub that ties together
+**one `Source`** (the base station currently pushing) and **N `Subscriber`s**
+(the clients currently reading). A `Subscriber` is one reader's mailbox — a
+buffered `chan []byte` — and what it is subscribed to is a mountpoint. The
+`Manager` owns every mountpoint and the live config snapshot.
+
+```mermaid
+flowchart LR
+    subgraph MGR["caster.Manager (all mountpoints + config)"]
+        subgraph MP["Mountpoint &quot;TOKYO&quot;"]
+            SRC["Source<br/>(1 base station, push)"]
+            SUBS["Subscribers<br/>(N readers, each a chan []byte)"]
+            SRC -->|"Broadcast(chunk)"| SUBS
+        end
+    end
+    SERVER["NTRIP server (push)"] -->|"SOURCE / POST"| SRC
+    SUBS -->|"streamToClient"| C1["client #1"]
+    SUBS -->|"streamToClient"| C2["client #2"]
+```
+
+Role mapping:
+
+| Type | Role in one sentence |
+| ---- | -------------------- |
+| `caster.Manager` | Holds all mountpoints and the current config snapshot. |
+| `caster.Mountpoint` | One relay hub = one `Source` + N `Subscriber`s. |
+| `caster.Source` | The single base station currently pushing into a mountpoint. |
+| `caster.Subscriber` | One reading client's receive channel + done signal. |
+| `server.*` | Speaks the NTRIP wire protocol and wires connections to the above. |
+| `server.handoverSession` | A client whose subscription is moved between mountpoints by position. |
+
+Handover then reads simply: it moves **one subscriber's mountpoint** from, say,
+`TOKYO` to `OSAKA` as the client moves — the connection and channel stay the
+same.
+
 ## Processing flow
 
 ### Connection dispatch (`server.handleConn`)
