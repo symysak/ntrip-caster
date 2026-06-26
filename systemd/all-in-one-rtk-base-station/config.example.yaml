@@ -1,0 +1,137 @@
+# ntrip-caster configuration (YAML)
+#
+# Reloadable on `systemctl reload` (SIGHUP): client_users, mountpoints, handover.
+# Changing `listen` requires a restart.
+
+# TCP listen address. Standard NTRIP port is 2101.
+listen: ":2101"
+
+# Caster identity, advertised in the sourcetable CAS record.
+caster:
+  identifier: "Example NTRIP Caster"
+  operator: "Yoshiaki Suyama"
+  country: "JPN"
+  host: "caster.suyama.ne.jp"
+  port: 2101
+  lat: 35.6812
+  lon: 139.7671
+  nmea: true
+
+# NTRIP client (rover) credentials. Passwords are stored in plaintext.
+# `mountpoints` lists the stream/handover names the user may read ("*" = all).
+client_users:
+  - username: suyama
+    password: suyama
+    mountpoints: ["*"]
+  # - username: rover1
+  #   password: rover1pass
+  #   mountpoints: ["*"]
+  # - username: rover2
+  #   password: rover2pass
+  #   mountpoints: ["AUTO_RTCM32_MSM4", "TOKYO_RTCM32_MSM4"]
+
+# Mountpoints that NTRIP servers (base stations) push into.
+# `password` authenticates the pushing server (v1 SOURCE password / v2 POST
+# Basic-auth password). `lat`/`lon` are used for handover nearest-base ranking.
+mountpoints:
+  - name: rtcm30
+    password: rtcm30push
+    identifier: "Ukiha"
+    format: "RTCM 3.0"
+    format_details: "1005(10),1008(10),1004(1),1012(1)"
+    carrier: 2
+    nav_system: "GPS+GLO"
+    network: "Yoshiaki Suyama"
+    country: "JPN"
+    lat: 34.6937
+    lon: 135.5023
+    bitrate: 9600
+
+  - name: rtcm32msm4
+    password: rtcm32msm4push
+    identifier: "Ukiha"
+    format: "RTCM 3.2"
+    format_details: "1005(10),1008(10),1074(1),1084(1),1094(1),1104(1),1114(1),1124(1),1230(1)"
+    carrier: 2
+    nav_system: "GPS+GLO+GAL+BDS+QZSS+SBAS"
+    network: "Yoshiaki Suyama"
+    country: "JPN"
+    lat: 34.6937
+    lon: 135.5023
+    bitrate: 9600
+
+  - name: rtcm32msm5
+    password: rtcm32msm5push
+    identifier: "Ukiha"
+    format: "RTCM 3.2"
+    format_details: "1005(10),1008(10),1075(1),1085(1),1095(1),1105(1),1115(1),1125(1),1230(1)"
+    carrier: 2
+    nav_system: "GPS+GLO+GAL+BDS+QZSS+SBAS"
+    network: "Yoshiaki Suyama"
+    country: "JPN"
+    lat: 34.6937
+    lon: 135.5023
+    bitrate: 9600
+
+  - name: rtcm32msm7
+    password: rtcm32msm7push
+    identifier: "Ukiha"
+    format: "RTCM 3.2"
+    format_details: "1005(10),1008(10),1077(1),1087(1),1097(1),1107(1),1117(1),1127(1),1230(1)"
+    carrier: 2
+    nav_system: "GPS+GLO+GAL+BDS+QZSS+SBAS"
+    network: "Yoshiaki Suyama"
+    country: "JPN"
+    lat: 34.6937
+    lon: 135.5023
+    bitrate: 9600
+
+
+  # - name: OSAKA_RTCM32_MSM4
+  #   password: osaka32push
+  #   identifier: "Osaka"
+  #   format: "RTCM 3.2"
+  #   format_details: "1074(1),1084(1),1094(1),1124(1),1006(1),1033(1)"
+  #   carrier: 2
+  #   nav_system: "GPS+GLO+GAL+BDS"
+  #   network: "JP"
+  #   country: "JPN"
+  #   lat: 34.6937
+  #   lon: 135.5023
+  #   bitrate: 9600
+
+  # `open: true` lets clients read this stream WITHOUT authentication
+  # (anonymous). The push `password` still protects the server side, and the
+  # sourcetable advertises this stream with authentication "N".
+  # - name: PUBLIC_RTCM32_MSM4
+  #   password: public32push
+  #   identifier: "Public"
+  #   format: "RTCM 3.2"
+  #   format_details: "1074(1),1084(1),1094(1),1124(1),1006(1),1033(1)"
+  #   carrier: 2
+  #   nav_system: "GPS+GLO+GAL+BDS"
+  #   network: "JP"
+  #   country: "JPN"
+  #   lat: 35.0116
+  #   lon: 135.7681
+  #   bitrate: 9600
+  #   open: true
+
+# Handover endpoints. A client connecting here sends NMEA GGA; the caster
+# subscribes it to the nearest online member and re-switches as the client
+# moves. Group members manually so each endpoint serves one RTCM flavor.
+# handover:
+#   - name: AUTO_RTCM32_MSM4
+#     identifier: "Nearest RTCM3.2 MSM4"
+#     format: "RTCM 3.2"
+#     nav_system: "GPS+GLO+GAL+BDS"
+#     network: "JP"
+#     country: "JPN"
+#     # Hysteresis margin (km) to prevent flapping at a boundary: once attached,
+#     # a client only switches to another base that is more than this many km
+#     # closer than its current one. A base disconnect always fails over
+#     # immediately regardless of this margin. 0 = always use the nearest.
+#     switch_margin_km: 10
+#     members:
+#       - TOKYO_RTCM32_MSM4
+#       - OSAKA_RTCM32_MSM4
