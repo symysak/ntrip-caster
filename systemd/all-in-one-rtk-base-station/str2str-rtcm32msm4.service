@@ -1,0 +1,19 @@
+[Unit]
+Description=rtk-base-station str2str-rtcm32msm4
+Wants=network-online.target
+After=network-online.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Restart=always
+RestartSec=1s
+ExecStart=bash -c '/usr/local/bin/str2str \
+-in tcpcli://127.0.0.1:2102#ubx \
+-out "ntrips://:<password>@127.0.0.1:2101/rtcm32msm4#rtcm3" \
+-p <lat> <lon> <hgt> \
+-msg "1005(10),1008(10),1074(1),1084(1),1094(1),1104(1),1114(1),1124(1),1230(1)" \
+-opt -TADJ=1'
+
+[Install]
+WantedBy=default.target

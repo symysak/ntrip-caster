@@ -1,7 +1,9 @@
 [Unit]
 Description=NTRIP Caster
-After=network-online.target
 Wants=network-online.target
+After=network-online.target
+Conflicts=shutdown.target
+Before=shutdown.target
 
 [Service]
 Type=simple

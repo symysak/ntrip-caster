@@ -1,0 +1,17 @@
+[Unit]
+Description=rtk-base-station str2str-tcp
+Wants=network-online.target
+After=network-online.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Restart=always
+RestartSec=1s
+ExecStart=bash -c '/usr/local/bin/str2str \
+-in serial://ttyACM0:230400#ubx \
+-out tcpsvr://:2102 \
+-b 1'
+
+[Install]
+WantedBy=default.target
