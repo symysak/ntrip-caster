@@ -57,6 +57,8 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	if tc, ok := conn.(*net.TCPConn); ok {
 		tc.SetKeepAlive(true)
 		tc.SetKeepAlivePeriod(30 * time.Second)
+		// Forward each RTCM chunk without Nagle batching (also Go's default).
+		tc.SetNoDelay(true)
 	}
 
 	br := bufio.NewReader(conn)
@@ -115,6 +117,7 @@ func (s *Server) streamToClient(ctx context.Context, conn net.Conn, bw *bufio.Wr
 	conn.SetReadDeadline(time.Time{})
 	conn.SetWriteDeadline(time.Time{})
 
+	var lastWrite time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -125,10 +128,21 @@ func (s *Server) streamToClient(ctx context.Context, conn net.Conn, bw *bufio.Wr
 			if !ok {
 				return
 			}
-			conn.SetWriteDeadline(time.Now().Add(streamWriteTimeout))
+			now := time.Now()
+			var gap time.Duration
+			if !lastWrite.IsZero() {
+				gap = now.Sub(lastWrite)
+			}
+			lastWrite = now
+			conn.SetWriteDeadline(now.Add(streamWriteTimeout))
 			if err := writeStreamChunk(bw, v, chunk); err != nil {
 				return
 			}
+			// gap_ms is the time since the previous chunk written to this
+			// client; compare with the source-side "source data" gap to see
+			// whether burstiness originates upstream or in delivery.
+			s.log.Debug("client data", "remote", conn.RemoteAddr().String(),
+				"bytes", len(chunk), "gap_ms", gap.Milliseconds())
 		}
 	}
 }

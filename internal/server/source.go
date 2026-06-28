@@ -107,21 +107,47 @@ func (s *Server) runSource(ctx context.Context, conn net.Conn, bw *bufio.Writer,
 		return
 	}
 	s.log.Info("source connected", "mountpoint", name, "remote", src.RemoteAddr, "agent", agent, "version", int(v))
-	defer s.log.Info("source disconnected", "mountpoint", name, "remote", src.RemoteAddr)
+
+	start := nowFunc()
+	var total uint64
+	var cause error
+	defer func() {
+		reason := "eof"
+		if cause != nil {
+			reason = cause.Error()
+		}
+		s.log.Info("source disconnected", "mountpoint", name, "remote", src.RemoteAddr,
+			"reason", reason, "bytes", total, "duration", nowFunc().Sub(start).Round(time.Second).String())
+	}()
 
 	buf := make([]byte, readChunkSize)
+	var lastRead time.Time
 	for {
 		if ctx.Err() != nil {
+			cause = ctx.Err()
 			return
 		}
 		conn.SetReadDeadline(nowFunc().Add(sourceReadTimeout))
 		n, err := body.Read(buf)
 		if n > 0 {
+			now := nowFunc()
+			var gap time.Duration
+			if !lastRead.IsZero() {
+				gap = now.Sub(lastRead)
+			}
+			lastRead = now
+			total += uint64(n)
+			// gap_ms is the time since the previous read from this source; it
+			// shows whether the source pushes smoothly or in irregular bursts.
+			s.log.Debug("source data", "mountpoint", name, "bytes", n, "gap_ms", gap.Milliseconds())
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
 			mp.Broadcast(chunk)
 		}
 		if err != nil {
+			if err != io.EOF {
+				cause = err
+			}
 			return
 		}
 	}
